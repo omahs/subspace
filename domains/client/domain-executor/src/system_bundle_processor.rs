@@ -18,7 +18,7 @@ use sp_runtime::Digest;
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use subspace_core_primitives::Randomness;
+use subspace_core_primitives::{BlockNumber, Randomness};
 use system_runtime_primitives::SystemDomainApi;
 
 pub(crate) struct SystemBundleProcessor<Block, PBlock, Client, PClient, Backend, E>
@@ -113,6 +113,20 @@ where
     ) -> Result<(), sp_blockchain::Error> {
         let parent_hash = self.client.info().best_hash;
         let parent_number = self.client.info().best_number;
+
+        let primary_number_concrete: BlockNumber = primary_number
+            .try_into()
+            .unwrap_or_else(|_| panic!("Block number must fit into u32; qed"));
+        let parent_number_concrete: BlockNumber = parent_number
+            .try_into()
+            .unwrap_or_else(|_| panic!("Block number must fit into u32; qed"));
+
+        if primary_number_concrete != parent_number_concrete + 1 {
+            tracing::debug!(
+                "Incoming primary block number ({primary_number:?}) does not match the new domain best number, current best_number: {parent_number:?}"
+            );
+            return Ok(());
+        }
 
         let extrinsics = self.bundles_to_extrinsics(parent_hash, bundles, shuffling_seed)?;
 

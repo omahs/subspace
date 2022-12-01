@@ -132,6 +132,8 @@ pub(crate) async fn handle_block_import_notifications<
                 let _ = block_import_acknowledgement_sender.send(()).await;
             }
             Some(block_info) = block_info_receiver.next() => {
+                let primary_number = block_info.number;
+                let primary_hash = block_info.hash;
                 if let Err(error) = block_imported::<Block, PBlock, _, _>(
                     domain_id,
                     primary_chain_client,
@@ -139,7 +141,10 @@ pub(crate) async fn handle_block_import_notifications<
                     &mut active_leaves,
                     block_info,
                 ).await {
-                    tracing::error!(?error, "Failed to process primary block");
+                    tracing::error!(
+                        ?error,
+                        "Failed to process primary block #{primary_number:?}({primary_hash:?})"
+                    );
                     // Bring down the service as bundles processor is an essential task.
                     // TODO: more graceful shutdown.
                     break;
@@ -322,13 +327,18 @@ where
         unreachable!("Open domains are unsupported")
     };
 
-    processor(
+    // Processing the primary block and syncing from the peers happen concurrently, causing
+    // some execution receipt may not found?
+    if let Err(err) = processor(
         (block_hash, block_number, fork_choice),
         domain_bundles,
         shuffling_seed,
         maybe_new_runtime,
     )
-    .await?;
+    .await
+    {
+        tracing::error!(error = ?err, "Bundle processor error");
+    }
 
     Ok(())
 }
